@@ -1689,11 +1689,14 @@ class Query(BaseQuery):
             (ctx
              .literal(' ORDER BY ')
              .sql(CommaNodeList(self._order_by)))
-        if self._limit is not None or (self._offset is not None and
-                                       ctx.state.limit_max):
-            ctx.literal(' LIMIT ').sql(self._limit or ctx.state.limit_max)
-        if self._offset is not None:
-            ctx.literal(' OFFSET ').sql(self._offset)
+
+        if self._limit is not None or self._offset is not None:
+            if ctx.state.limit_fetch_syntax:
+                limit_clause = FetchFirstLimitOffset(self._limit, self._offset)
+            else:
+                limit_clause = LimitOffset(self._limit, self._offset)
+            ctx.sql(limit_clause)
+
         return ctx
 
     def __sql__(self, ctx):
@@ -1706,6 +1709,34 @@ class Query(BaseQuery):
                  .literal('WITH RECURSIVE ' if recursive else 'WITH ')
                  .sql(CommaNodeList(self._cte_list))
                  .literal(' '))
+        return ctx
+
+
+class LimitOffset(Node):
+    def __init__(self, limit=None, offset=None):
+        self._limit = limit
+        self._offset = offset
+        super(LimitOffset, self).__init__()
+
+    def __sql__(self, ctx):
+        if self._limit is not None or (self._offset is not None and
+                                       ctx.state.limit_max):
+            ctx.literal(' LIMIT ').sql(self._limit or ctx.state.limit_max)
+        if self._offset is not None:
+            ctx.literal(' OFFSET ').sql(self._offset)
+        return ctx
+
+
+class FetchFirstLimitOffset(LimitOffset):
+    def __sql__(self, ctx):
+        if self._offset is not None or ctx.state.limit_offset_required:
+            ctx.literal(' OFFSET ').sql(self._offset or 0).literal(' ROWS')
+        if self._limit is not None:
+            stmt = 'NEXT' if ctx.state.limit_fetch_next else 'FIRST'
+            (ctx
+             .literal(' FETCH %s ' % stmt)
+             .sql(self._limit)
+             .literal(' ROWS ONLY'))
         return ctx
 
 
