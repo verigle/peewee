@@ -141,10 +141,54 @@ pre-filtered ``SELECT`` query:
 Joining multiple tables
 -----------------------
 
-For a more complicated example involving multiple joins, let's find all the
-tweets by Huey and the number of times they've been favorited. To do this we'll
-need to perform two joins and we'll also use an aggregate function to calculate
-the favorite count.
+Let's take another look at joins by querying the list of users and getting the
+count of how many tweet's they've authored that were favorited. This will
+require us to join twice: from user to tweet, and from tweet to favorite. We'll
+add the additional requirement that users should be included who have not
+created any tweets, as well as users whose tweets have not been favorited. The
+query, expressed in SQL, would be:
+
+.. code-block:: sql
+
+    SELECT user.username, COUNT(favorite.id)
+    FROM user
+    LEFT OUTER JOIN tweet ON tweet.user_id = user.id
+    LEFT OUTER JOIN favorite ON favorite.tweet_id = tweet.id
+    GROUP BY user.username
+
+.. note::
+    In the above query both joins are LEFT OUTER, since a user may not have any
+    tweets or, if they have tweets, none of them may have been favorited.
+
+Peewee has a concept of a *join context*, meaning that whenever we call the
+:py:meth:`~ModelSelect.join` method, we are implicitly joining on the
+previously-joined model (or if this is the first call, the model we are
+selecting from). Since we are joining straight through, from user to tweet,
+then from tweet to favorite, we can simply write:
+
+.. code-block:: python
+
+    query = (User
+             .select(User.username, fn.COUNT(Favorite.id).alias('count'))
+             .join(Tweet, JOIN.LEFT_OUTER)  # Joins user -> tweet.
+             .join(Favorite, JOIN.LEFT_OUTER)  # Joins tweet -> favorite.
+             .group_by(User.username))
+
+Iterating over the results:
+
+.. code-block:: pycon
+
+    >>> for user in query:
+    ...     print(user.username, user.count)
+    ...
+    huey 3
+    mickey 1
+    zaizee 0
+
+For a more complicated example involving multiple joins and switching join
+contexts, let's find all the tweets by Huey and the number of times they've
+been favorited. To do this we'll need to perform two joins and we'll also use
+an aggregate function to calculate the favorite count.
 
 Here is how we would write this query in SQL:
 
@@ -175,13 +219,11 @@ write in SQL:
              .where(User.username == 'huey')
              .group_by(Tweet.content))
 
-.. note::
-    Note the call to :py:meth:`~ModelSelect.switch` - that instructs Peewee to
-    set the *join context* back to ``Tweet``. If we had omitted the explicit
-    call to switch, Peewee would have used ``User`` (the last model we joined)
-    as the join context and constructed the join from User to Favorite using
-    the ``Favorite.user`` foreign-key, which would have given us incorrect
-    results.
+Note the call to :py:meth:`~ModelSelect.switch` - that instructs Peewee to set
+the *join context* back to ``Tweet``. If we had omitted the explicit call to
+switch, Peewee would have used ``User`` (the last model we joined) as the join
+context and constructed the join from User to Favorite using the
+``Favorite.user`` foreign-key, which would have given us incorrect results.
 
 We can iterate over the results of the above query to print the tweet's content
 and the favorite count:
@@ -194,44 +236,6 @@ and the favorite count:
     meow favorited 1 times
     hiss favorited 0 times
     purr favorited 2 times
-
-Let's take another look at the concept of a *join context* by querying the list
-of users and getting the count of how many tweet's they've authored that were
-favorited. The query, expressed in SQL, would be:
-
-.. code-block:: sql
-
-    SELECT user.username, COUNT(favorite.id)
-    FROM user
-    LEFT OUTER JOIN tweet ON tweet.user_id = user.id
-    LEFT OUTER JOIN favorite ON favorite.tweet_id = tweet.id
-    GROUP BY user.username
-
-.. note::
-    In the above query both joins are LEFT OUTER, since a user may not have any
-    tweets or, if they have tweets, none of them may have been favorited.
-
-Because we are joining straight through from user to tweet to favorite, we do
-not need to explicitly switch the join context at any time:
-
-.. code-block:: python
-
-    query = (User
-             .select(User.username, fn.COUNT(Favorite.id).alias('count'))
-             .join(Tweet, JOIN.LEFT_OUTER)
-             .join(Favorite, JOIN.LEFT_OUTER)
-             .group_by(User.username))
-
-Iterating over the results:
-
-.. code-block:: pycon
-
-    >>> for user in query:
-    ...     print(user.username, user.count)
-    ...
-    huey 3
-    mickey 1
-    zaizee 0
 
 Selecting from multiple sources
 -------------------------------
@@ -252,8 +256,8 @@ their author, you might try writing this:
 
 There is a big problem with the above loop: it executes an additional query for
 every tweet to look up the ``tweet.user`` foreign-key. For our small table the
-performance penalty isn't obvious, but if we had a large table it could cause
-significant slowness.
+performance penalty isn't obvious, but we would find the delays grew as the
+number of rows increased.
 
 If you're familiar with SQL, you might remember that it's possible to SELECT
 from multiple tables, allowing us to get the tweet content *and* the username
@@ -282,10 +286,11 @@ Peewee to return the rows as dictionaries.
     {'content': 'woof', 'username': 'mickey'}
     {'content': 'whine', 'username': 'mickey'}
 
-Notice that when we leave off the call to ".dicts()", Peewee assigns the
-``username`` value to ``tweet.user.username`` -- NOT ``tweet.username``!
-Because there is a foreign-key from tweet to user, and we have selected fields
-from both models, Peewee will reconstruct the model-graph for us:
+Now we'll leave off the call to ".dicts()" and return the rows as ``Tweet``
+objects. Notice that Peewee assigns the ``username`` value to
+``tweet.user.username`` -- NOT ``tweet.username``!  Because there is a
+foreign-key from tweet to user, and we have selected fields from both models,
+Peewee will reconstruct the model-graph for us:
 
 .. code-block:: pycon
 
@@ -298,6 +303,33 @@ from both models, Peewee will reconstruct the model-graph for us:
     mickey -> woof
     mickey -> whine
 
+If we wish to, we can control where Peewee puts the joined ``User`` instance in
+the above query, by specifying an ``attr`` in the ``join()`` method:
+
+.. code-block:: pycon
+
+    >>> query = Tweet.select(Tweet.content, User.username).join(User, attr='author')
+    >>> for tweet in query:
+    ...     print(tweet.author.username, '->', tweet.content)
+    ...
+    huey -> meow
+    huey -> hiss
+    huey -> purr
+    mickey -> woof
+    mickey -> whine
+
+Conversely, if we simply wish *all* attributes we select to me attributes of
+the ``Tweet`` instance, we can add a call to :py:meth:`~ModelSelect.objects` at
+the end of our query (similar to how we called ``dicts()``):
+
+.. code-block:: pycon
+
+    >>> for tweet in query.objects():
+    ...     print(tweet.username, '->', tweet.content)
+    ...
+    huey -> meow
+    (etc)
+
 More complex example
 ^^^^^^^^^^^^^^^^^^^^
 
@@ -306,6 +338,8 @@ selects all the favorites, along with the user who created the favorite, the
 tweet that was favorited, and that tweet's author.
 
 In SQL we would write:
+
+.. code-block:: sql
 
     SELECT owner.username, tweet.content, author.username AS author
     FROM favorite
@@ -335,13 +369,13 @@ selected and reconstructed the model graph:
 
 .. code-block:: pycon
 
-    >>> for favorite in query:
-    ...     print(favorite.user.username, favorite.tweet.content, favorite.tweet.user.username)
+    >>> for fav in query:
+    ...     print(fav.user.username, 'liked', fav.tweet.content, 'by', fav.tweet.user.username)
     ...
-    huey whine mickey
-    mickey purr huey
-    zaizee meow huey
-    zaizee purr huey
+    huey liked whine by mickey
+    mickey liked purr by huey
+    zaizee liked meow by huey
+    zaizee liked purr by huey
 
 .. attention::
     If you are unsure how many queries are being executed, you can add the
