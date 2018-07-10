@@ -49,6 +49,7 @@ except OperationalError:
           'the postgres_ext tests.')
 from .pwiz_integration import *
 from .reflection import *
+from .schema_validate import *
 from .shortcuts import *
 from .signals import *
 try:
