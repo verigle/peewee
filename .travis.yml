@@ -4,8 +4,6 @@ python:
   - 3.4
   - 3.5
   - 3.6
-  - 3.7
-  - 3.8-dev
 dist: trusty
 env:
   - PEEWEE_TEST_BACKEND=sqlite
@@ -16,6 +14,15 @@ matrix:
     - python: 3.7
       dist: xenial
       sudo: true
+      env: PEEWEE_TEST_BACKEND=sqlite
+    - python: 3.7
+      dist: xenial
+      sudo: true
+      env: PEEWEE_TEST_BACKEND=postgresql
+    - python: 3.7
+      dist: xenial
+      sudo: true
+      env: PEEWEE_TEST_BACKEND=mysql
     - python: 3.8-dev
       dist: xenial
       sudo: true
