@@ -1,6 +1,6 @@
 language: python
 cache: pip
-jobs:
+matrix:
   include:
     - python: 2.7
     - python: 3.4
@@ -12,10 +12,10 @@ jobs:
     - python: 3.8-dev
       dist: xenial
       sudo: true
-env:
-  - PEEWEE_TEST_BACKEND=sqlite
-  - PEEWEE_TEST_BACKEND=postgresql
-  - PEEWEE_TEST_BACKEND=mysql
+  env:
+    - PEEWEE_TEST_BACKEND=sqlite
+    - PEEWEE_TEST_BACKEND=postgresql
+    - PEEWEE_TEST_BACKEND=mysql
 addons:
   postgresql: "9.6"
   mariadb: "10.3"
