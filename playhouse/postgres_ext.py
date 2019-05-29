@@ -46,6 +46,8 @@ JSONB_CONTAINS_ANY_KEY = '?|'
 JSONB_CONTAINS_ALL_KEYS = '?&'
 JSONB_EXISTS = '?'
 JSONB_REMOVE = '-'
+JSONP_MATCH = '?@'
+JSONP_PREDICATE = '@@'
 
 
 class _LookupNode(ColumnBase):
