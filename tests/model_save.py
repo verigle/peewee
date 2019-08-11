@@ -1,5 +1,6 @@
 from peewee import *
 
+from .base import IS_POSTGRESQL
 from .base import ModelTestCase
 from .base import TestModel
 from .base import requires_postgresql
@@ -163,3 +164,37 @@ class TestSaveNoData(ModelTestCase):
     def test_save_no_data3(self):
         t5 = T5.create()
         self.assertRaises(ValueError, t5.save)
+
+
+class RO(TestModel):
+    key = TextField()
+    uid = IntegerField(constraints=[SQL('DEFAULT 1337')], null=False,
+                       readonly=True)
+
+
+class TestReadOnly(ModelTestCase):
+    requires = [RO]
+
+    def test_readonly_basic(self):
+        # First we check that the default value was used.
+        ro = RO.create(key='k1')
+        ro2 = RO.get(RO.key == 'k1')
+        self.assertEqual(ro2.uid, 1337)
+
+        ro2.key = 'k1-x'
+        ro2.uid = 1338  # This will have no effect.
+        ro2.save()
+
+        ro3 = RO.get(RO.key == 'k1-x')
+        self.assertEqual(ro3.uid, 1337)
+
+        # Similarly, using the constructor and calling save has no effect.
+        ro = RO(key='k2', uid=100)
+        ro.save()
+        ro2 = RO.get(RO.key == 'k2')
+        self.assertEqual(ro2.uid, 1337)
+
+    @requires_postgresql
+    def test_readonly_returning(self):
+        ro = RO.create(key='kx')
+        self.assertEqual(ro.uid, 1337)  # Value is returned via RETURNING.

@@ -4303,7 +4303,7 @@ class Field(ColumnBase):
                  default=None, primary_key=False, constraints=None,
                  sequence=None, collation=None, unindexed=False, choices=None,
                  help_text=None, verbose_name=None, index_type=None,
-                 db_column=None, _hidden=False):
+                 readonly=False, db_column=None, _hidden=False):
         if db_column is not None:
             __deprecated__('"db_column" has been deprecated in favor of '
                            '"column_name" for Field objects.')
@@ -4322,6 +4322,7 @@ class Field(ColumnBase):
         self.choices = choices
         self.help_text = help_text
         self.verbose_name = verbose_name
+        self.readonly = readonly
         self.index_type = index_type or self.default_index_type
         self._hidden = _hidden
 
@@ -5596,6 +5597,7 @@ class Metadata(object):
         self.fields = {}
         self.columns = {}
         self.combined = {}
+        self.readonly = []
 
         self._sorted_field_list = _SortedFieldList()
         self.sorted_fields = []
@@ -5756,6 +5758,9 @@ class Metadata(object):
             self.combined[field.name] = field
             self.combined[field.column_name] = field
 
+            if field.readonly:
+                self.readonly.append(field)
+
             self._sorted_field_list.insert(field)
             self._update_sorted_fields()
 
@@ -5791,6 +5796,11 @@ class Metadata(object):
             pass
         self._sorted_field_list.remove(original)
         self._update_sorted_fields()
+
+        try:
+            self.readonly.remove(original)
+        except ValueError:
+            pass
 
         if original.default is not None:
             del self.defaults[original]
@@ -6130,17 +6140,15 @@ class Model(with_metaclass(ModelBase, Node)):
         else:
             batches = [model_list]
 
-        field_names = list(cls._meta.sorted_field_names)
+        fields = [f.name for f in cls._meta.sorted_fields if not f.readonly]
         if cls._meta.auto_increment:
-            pk_name = cls._meta.primary_key.name
-            field_names.remove(pk_name)
+            fields.remove(cls._meta.primary_key)
             ids_returned = cls._meta.database.returning_clause
         else:
             ids_returned = False
 
-        fields = [cls._meta.fields[field_name] for field_name in field_names]
         for batch in batches:
-            accum = ([getattr(model, f) for f in field_names]
+            accum = ([getattr(model, f.name) for f in fields]
                      for model in batch)
             res = cls.insert_many(accum, fields=fields).execute()
             if ids_returned and res is not None:
@@ -6283,6 +6291,13 @@ class Model(with_metaclass(ModelBase, Node)):
 
     def save(self, force_insert=False, only=None):
         field_dict = self.__data__.copy()
+
+        for field in self._meta.readonly:
+            try:
+                del field_dict[field.name]
+            except KeyError:
+                pass
+
         if self._meta.primary_key is not False:
             pk_field = self._meta.primary_key
             pk_value = self._pk
@@ -6309,7 +6324,10 @@ class Model(with_metaclass(ModelBase, Node)):
                 raise ValueError('no data to save!')
             rows = self.update(**field_dict).where(self._pk_expr()).execute()
         elif pk_field is not None:
-            pk = self.insert(**field_dict).execute()
+            if self._meta.database.returning_clause and self._meta.readonly:
+                pk = self._save_returning_readonly(field_dict)
+            else:
+                pk = self.insert(**field_dict).execute()
             if pk is not None and (self._meta.auto_increment or
                                    pk_value is None):
                 self._pk = pk
@@ -6318,6 +6336,15 @@ class Model(with_metaclass(ModelBase, Node)):
 
         self._dirty.clear()
         return rows
+
+    def _save_returning_readonly(self, field_dict):
+        returning = (self._meta.get_primary_keys() +
+                     tuple(self._meta.readonly))
+        iq = self.insert(**field_dict).returning(*returning).tuples()
+        row = iq.execute()[0]
+        for field, value in zip(returning, row):
+            setattr(self, field.name, value)
+        return row[0]
 
     def is_dirty(self):
         return bool(self._dirty)
