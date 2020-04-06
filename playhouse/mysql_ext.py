@@ -4,6 +4,10 @@ try:
     import mysql.connector as mysql_connector
 except ImportError:
     mysql_connector = None
+try:
+    import mariadb
+except ImportError:
+    mariadb = None
 
 from peewee import ImproperlyConfigured
 from peewee import MySQLDatabase
@@ -26,6 +30,27 @@ class MySQLConnectorDatabase(MySQLDatabase):
             else:
                 raise InterfaceError('Error, database connection not opened.')
         return self._state.conn.cursor(buffered=True)
+
+
+class MariaDBConnectorDatabase(MySQLConnectorDatabase):
+    param = '?'
+
+    def _get_default_connect_params(self):
+        # XXX: the driver indicates charset is an available parameter, but it
+        # does not appear to be supported. The other defaults used for MySQL
+        # (sql_mode and use_unicode) do not appear supported either.
+        return {}
+
+    def _connect(self):
+        if mariadb is None:
+            raise ImproperlyConfigured('MariaDB connector not installed!')
+        return mariadb.connect(database=self.database, **self.connect_params)
+
+    def _set_server_version(self, conn):
+        version_raw = conn.server_version
+        major, rem = divmod(version_raw, 10000)
+        minor, rev = divmod(rem, 100)
+        self.server_version = '%s.%s.%s' % (major, minor, rev)
 
 
 class JSONField(TextField):

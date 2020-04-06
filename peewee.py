@@ -3918,14 +3918,17 @@ class MySQLDatabase(Database):
     sql_mode = 'PIPES_AS_CONCAT'
 
     def init(self, database, **kwargs):
-        params = {
-            'charset': 'utf8',
-            'sql_mode': self.sql_mode,
-            'use_unicode': True}
+        params = self._get_default_connect_params()
         params.update(kwargs)
         if 'password' in params and mysql_passwd:
             params['passwd'] = params.pop('password')
         super(MySQLDatabase, self).init(database, **params)
+
+    def _get_default_connect_params(self):
+        return {
+            'charset': 'utf8',
+            'sql_mode': self.sql_mode,
+            'use_unicode': True}
 
     def _connect(self):
         if mysql is None:
@@ -3945,7 +3948,7 @@ class MySQLDatabase(Database):
         if 'maria' in version:
             match_obj = re.search(r'(1\d\.\d+\.\d+)', version)
         else:
-            match_obj = re.search(r'(\d\.\d+\.\d+)', version)
+            match_obj = re.search(r'(\d+\.\d+\.\d+)', version)
         if match_obj is not None:
             return tuple(int(num) for num in match_obj.groups()[0].split('.'))
 
