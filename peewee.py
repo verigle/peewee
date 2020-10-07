@@ -84,6 +84,7 @@ __all__ = [
     'chunked',
     'Column',
     'CompositeKey',
+    'Computed',
     'Context',
     'Database',
     'DatabaseError',
@@ -4458,6 +4459,18 @@ class ObjectIdAccessor(object):
         setattr(instance, self.field.name, value)
 
 
+class Computed(object):
+    def __init__(self, sql, stored=True):
+        self.sql = sql
+        self.stored = stored
+
+    def ddl(self):
+        ddl = 'GENERATED ALWAYS AS (%s)' % self.sql
+        if self.stored is not None:
+            ddl += ' STORED' if self.stored else ' VIRTUAL'
+        return SQL(ddl)
+
+
 class Field(ColumnBase):
     _field_counter = 0
     _order = 0
@@ -4469,9 +4482,10 @@ class Field(ColumnBase):
 
     def __init__(self, null=False, index=False, unique=False, column_name=None,
                  default=None, primary_key=False, constraints=None,
-                 sequence=None, collation=None, unindexed=False, choices=None,
-                 help_text=None, verbose_name=None, index_type=None,
-                 db_column=None, _hidden=False):
+                 sequence=None, collation=None, generated_as=None,
+                 unindexed=False, choices=None, help_text=None,
+                 verbose_name=None, index_type=None, db_column=None,
+                 _hidden=False):
         if db_column is not None:
             __deprecated__('"db_column" has been deprecated in favor of '
                            '"column_name" for Field objects.')
@@ -4486,6 +4500,7 @@ class Field(ColumnBase):
         self.constraints = constraints  # List of column constraints.
         self.sequence = sequence  # Name of sequence, e.g. foo_id_seq.
         self.collation = collation
+        self.generated_as = generated_as
         self.unindexed = unindexed
         self.choices = choices
         self.help_text = help_text
@@ -4560,6 +4575,8 @@ class Field(ColumnBase):
         data_type = self.ddl_datatype(ctx)
         if data_type:
             accum.append(data_type)
+        if self.generated_as:
+            accum.append(self.generated_as.ddl())
         if self.unindexed:
             accum.append(SQL('UNINDEXED'))
         if not self.null:

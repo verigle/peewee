@@ -4,10 +4,14 @@ from peewee import *
 from peewee import NodeList
 
 from .base import BaseTestCase
+from .base import db
 from .base import get_in_memory_db
+from .base import IS_MYSQL
+from .base import IS_POSTGRESQL
 from .base import IS_SQLITE
 from .base import ModelDatabaseTestCase
 from .base import ModelTestCase
+from .base import skip_unless
 from .base import TestModel
 from .base_models import Category
 from .base_models import Note
@@ -64,10 +68,15 @@ Article.add_index(idx)
 Article.add_index(SQL('CREATE INDEX "article_foo" ON "article" ("flags" & 3)'))
 
 
+class Gen(TestModel):
+    r = FloatField()
+    area = FloatField(generated_as=Computed('3.14 * r * r'), null=True)
+
+
 class TestModelDDL(ModelDatabaseTestCase):
     database = get_in_memory_db()
     requires = [Article, CacheData, Category, Note, Person, Relationship,
-                TMUnique, TMSequence, TMIndexes, TMConstraints, User]
+                TMUnique, TMSequence, TMIndexes, TMConstraints, User, Gen]
 
     def test_database_required(self):
         class MissingDB(Model):
@@ -476,6 +485,13 @@ class TestModelDDL(ModelDatabaseTestCase):
              ' "data" INTEGER CHECK (data < 5), '
              '"value" TEXT NOT NULL COLLATE NOCASE)')])
 
+        self.assertCreateTable(Gen, [
+            ('CREATE TABLE "gen" ('
+             '"id" INTEGER NOT NULL PRIMARY KEY, '
+             '"r" REAL NOT NULL, '
+             '"area" REAL GENERATED ALWAYS AS '
+             '(3.14 * r * r) STORED)')])
+
     def test_index_name_truncation(self):
         class LongIndex(TestModel):
             a123456789012345678901234567890 = CharField()
@@ -758,3 +774,30 @@ class TestTruncateTable(ModelTestCase):
 
         User.truncate_table()
         self.assertEqual(User.select().count(), 0)
+
+
+def supports_generated_columns():
+    if IS_SQLITE:
+        from peewee import sqlite3
+        return sqlite3.sqlite_version_info >= (3, 31)
+    elif IS_MYSQL:
+        with db:
+            return db.server_version[:2] >= (5, 7)
+    elif IS_POSTGRESQL:
+        with db:
+            return db.connection().server_version >= 120000
+    return False
+
+@skip_unless(supports_generated_columns(), 'generated columns unavailable')
+class TestGeneratedColumns(ModelTestCase):
+    requires = [Gen]
+
+    def test_generated_columns(self):
+        g = Gen.create(r=2)
+        g_db = Gen.get(Gen.id == g.id)
+        self.assertEqual(round(g_db.area, 1), round(3.14 * 2 * 2, 1))
+
+        g.r = 3
+        g.save()
+        g_db = Gen.get(Gen.id == g.id)
+        self.assertEqual(round(g_db.area, 1), round(3.14 * 3 * 3, 1))
