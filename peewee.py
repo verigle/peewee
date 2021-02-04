@@ -3368,6 +3368,7 @@ class SqliteDatabase(Database):
     index_schema_prefix = True
     limit_max = -1
     server_version = __sqlite_version__
+    returning_clause = __sqlite_version__ >= (3, 35, 0)
     truncate_table = False
 
     def __init__(self, database, *args, **kwargs):
@@ -3394,6 +3395,14 @@ class SqliteDatabase(Database):
 
     def _set_server_version(self, conn):
         pass
+
+    def last_insert_id(self, cursor, query_type=None):
+        if not self.returning_clause:
+            return cursor.lastrowid
+        try:
+            return cursor if query_type != Insert.SIMPLE else cursor[0][0]
+        except (IndexError, KeyError, TypeError):
+            pass
 
     def _connect(self):
         if sqlite3 is None:
