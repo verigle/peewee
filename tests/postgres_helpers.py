@@ -164,6 +164,24 @@ class BaseJsonFieldTestCase(object):
 
 # Contains additional test-cases suitable for the JSONB data-type.
 class BaseBinaryJsonFieldTestCase(BaseJsonFieldTestCase):
+    def test_json_types(self):
+        values = [
+            [{'k': 'v1'}, {'k': 'v2'}],
+            {'k1': 'v1', 'k2': 'v2'},
+            'string',
+            123,
+            0.5,
+            {'k1': [{'x': 'y1'}, {'x': 'y2'}], 'k2': {'a2': 'b2'},
+             'k3': 'string', 'k4': 123, 'k5': 0.5, 'k6': None},
+        ]
+        for value in values:
+            obj1, created = self.M.get_or_create(data=value)
+            self.assertTrue(created)
+            obj2, created = self.M.get_or_create(data=value)
+            self.assertFalse(created)
+            self.assertEqual(obj1.id, obj2.id)
+            self.assertTrue(obj1.data == obj2.data == value)
+
     def _create_test_data(self):
         data = [
             {'k1': 'v1', 'k2': 'v2', 'k3': {'k4': ['i1', 'i2'], 'k5': {}}},

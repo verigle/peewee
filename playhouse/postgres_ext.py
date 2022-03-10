@@ -333,6 +333,13 @@ class BinaryJSONField(IndexedFieldMixin, JSONField):
     _json_datatype = 'jsonb'
     __hash__ = Field.__hash__
 
+    def __eq__(self, rhs):
+        if isinstance(rhs, list): rhs = Json(rhs)
+        return super(BinaryJSONField, self).__eq__(rhs)
+    def __ne__(self, rhs):
+        if isinstance(rhs, list): rhs = Json(rhs)
+        return super(BinaryJSONField, self).__ne__(rhs)
+
     def contains(self, other):
         if isinstance(other, (list, dict)):
             return Expression(self, JSONB_CONTAINS, Json(other))
